@@ -79,8 +79,8 @@ class Geant4(CMakePackage):
 
         options = [
             '-DGEANT4_USE_GDML=ON',
-            '-DGEANT4_USE_SYSTEM_CLHEP=ON',
-            '-DGEANT4_USE_G3TOG4=ON',
+            '-DGEANT4_USE_SYSTEM_CLHEP=OFF',
+            '-DGEANT4_USE_G3TOG4=OFF',
             '-DGEANT4_INSTALL_DATA=ON',
             '-DGEANT4_BUILD_TLS_MODEL=global-dynamic',
             '-DGEANT4_USE_SYSTEM_EXPAT=ON',
