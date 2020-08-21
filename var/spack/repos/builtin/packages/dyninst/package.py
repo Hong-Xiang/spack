@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Lawrence Livermore National Security, LLC and other
+# Copyright 2013-2020 Lawrence Livermore National Security, LLC and other
 # Spack Project Developers. See the top-level COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
@@ -11,10 +11,13 @@ class Dyninst(CMakePackage):
     """API for dynamic binary instrumentation.  Modify programs while they
     are executing without recompiling, re-linking, or re-executing."""
 
-    homepage = "https://paradyn.org"
+    homepage = "https://dyninst.org"
     git      = "https://github.com/dyninst/dyninst.git"
+    maintainers = ['hainest']
 
-    version('develop', branch='master')
+    version('master', branch='master')
+    version('10.2.0', tag='v10.2.0')
+    version('10.1.0', tag='v10.1.0')
     version('10.0.0', tag='v10.0.0')
     version('9.3.2', tag='v9.3.2')
     version('9.3.0', tag='v9.3.0')
@@ -34,22 +37,24 @@ class Dyninst(CMakePackage):
 
     boost_libs = '+atomic+chrono+date_time+filesystem+system+thread+timer'
 
-    depends_on('boost@1.61.0:' + boost_libs)
+    depends_on('boost@1.61.0:' + boost_libs, when='@10.1.0:')
+    depends_on('boost@1.61.0:1.69.99' + boost_libs, when='@:10.0.99')
     depends_on('libiberty+pic')
 
-    # Dyninst uses elf@1 (elfutils) starting with 9.3.0, and used
-    # elf@0 (libelf) before that.
-    depends_on('elf@1', type='link', when='@9.3.0:')
-    depends_on('elf@0', type='link', when='@:9.2.99')
+    # Dyninst uses elfutils starting with 9.3.0, and used libelf
+    # before that.
+    depends_on('elfutils', type='link', when='@9.3.0:')
+    depends_on('libelf', type='link', when='@:9.2.99')
 
-    # Dyninst uses libdw from elfutils (same elf@1) starting with
-    # 10.x, and used libdwarf before that.
-    depends_on('libdwarf', when='@:9.99')
+    # Dyninst uses libdw from elfutils starting with 10.0, and used
+    # libdwarf before that.
+    depends_on('libdwarf', when='@:9.99.99')
 
-    depends_on('tbb@2018.6:', when='@10.0:')
+    depends_on('tbb@2018.6:', when='@10.0.0:')
 
-    depends_on('cmake@3.0:', type='build', when='@10.0:')
-    depends_on('cmake@2.8:', type='build', when='@:9.99')
+    depends_on('cmake@3.4.0:', type='build', when='@10.1.0:')
+    depends_on('cmake@3.0.0:', type='build', when='@10.0.0:10.0.99')
+    depends_on('cmake@2.8:', type='build', when='@:9.99.99')
 
     patch('stat_dysect.patch', when='+stat_dysect')
     patch('stackanalysis_h.patch', when='@9.2.0')
@@ -64,6 +69,37 @@ class Dyninst(CMakePackage):
         filter_file('USE_COTIRE true', 'USE_COTIRE false',
                     'cmake/shared.cmake')
 
+    # New style cmake args, starting with 10.1.
+    @when('@10.1.0:')
+    def cmake_args(self):
+        spec = self.spec
+
+        args = [
+            '-DBoost_ROOT_DIR=%s'     % spec['boost'].prefix,
+            '-DElfUtils_ROOT_DIR=%s'  % spec['elf'].prefix,
+            '-DLibIberty_ROOT_DIR=%s' % spec['libiberty'].prefix,
+            '-DTBB_ROOT_DIR=%s'       % spec['tbb'].prefix,
+        ]
+
+        if '+openmp' in spec:
+            args.append('-DUSE_OpenMP=ON')
+        else:
+            args.append('-DUSE_OpenMP=OFF')
+
+        if '+static' in spec:
+            args.append('-DENABLE_STATIC_LIBS=YES')
+        else:
+            args.append('-DENABLE_STATIC_LIBS=NO')
+
+        # Make sure Dyninst doesn't try to build its own dependencies
+        # outside of Spack
+        if spec.satisfies('@10.2.0:'):
+            args.append('-DSTERILE_BUILD=ON')
+
+        return args
+
+    # Old style cmake args, up through 10.0.
+    @when('@:10.0.99')
     def cmake_args(self):
         spec = self.spec
 

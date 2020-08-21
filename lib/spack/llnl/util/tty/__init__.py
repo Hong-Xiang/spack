@@ -1,9 +1,10 @@
-# Copyright 2013-2019 Lawrence Livermore National Security, LLC and other
+# Copyright 2013-2020 Lawrence Livermore National Security, LLC and other
 # Spack Project Developers. See the top-level COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-from datetime import datetime
+from __future__ import unicode_literals
+
 import fcntl
 import os
 import struct
@@ -11,12 +12,15 @@ import sys
 import termios
 import textwrap
 import traceback
+import six
+from datetime import datetime
 from six import StringIO
 from six.moves import input
 
 from llnl.util.tty.color import cprint, cwrite, cescape, clen
 
-_debug = False
+# Globals
+_debug = 0
 _verbose = False
 _stacktrace = False
 _timestamp = False
@@ -26,21 +30,26 @@ _error_enabled = True
 indent = "  "
 
 
+def debug_level():
+    return _debug
+
+
 def is_verbose():
     return _verbose
 
 
-def is_debug():
-    return _debug
+def is_debug(level=1):
+    return _debug >= level
 
 
 def is_stacktrace():
     return _stacktrace
 
 
-def set_debug(flag):
+def set_debug(level=0):
     global _debug
-    _debug = flag
+    assert level >= 0, 'Debug level must be a positive value'
+    _debug = level
 
 
 def set_verbose(flag):
@@ -129,10 +138,17 @@ def process_stacktrace(countback):
     return st_text
 
 
+def show_pid():
+    return is_debug(2)
+
+
 def get_timestamp(force=False):
     """Get a string timestamp"""
     if _debug or _timestamp or force:
-        return datetime.now().strftime("[%Y-%m-%d-%H:%M:%S.%f] ")
+        # Note inclusion of the PID is useful for parallel builds.
+        pid = ', {0}'.format(os.getpid()) if show_pid() else ''
+        return '[{0}{1}] '.format(
+            datetime.now().strftime("%Y-%m-%d-%H:%M:%S.%f"), pid)
     else:
         return ''
 
@@ -140,6 +156,9 @@ def get_timestamp(force=False):
 def msg(message, *args, **kwargs):
     if not msg_enabled():
         return
+
+    if isinstance(message, Exception):
+        message = "%s: %s" % (message.__class__.__name__, str(message))
 
     newline = kwargs.get('newline', True)
     st_text = ""
@@ -152,10 +171,13 @@ def msg(message, *args, **kwargs):
         cwrite("@*b{%s==>} %s%s" % (
             st_text, get_timestamp(), cescape(message)))
     for arg in args:
-        print(indent + str(arg))
+        print(indent + six.text_type(arg))
 
 
 def info(message, *args, **kwargs):
+    if isinstance(message, Exception):
+        message = "%s: %s" % (message.__class__.__name__, str(message))
+
     format = kwargs.get('format', '*b')
     stream = kwargs.get('stream', sys.stdout)
     wrap = kwargs.get('wrap', False)
@@ -166,17 +188,17 @@ def info(message, *args, **kwargs):
     if _stacktrace:
         st_text = process_stacktrace(st_countback)
     cprint("@%s{%s==>} %s%s" % (
-        format, st_text, get_timestamp(), cescape(str(message))),
-        stream=stream)
+        format, st_text, get_timestamp(), cescape(six.text_type(message))
+    ), stream=stream)
     for arg in args:
         if wrap:
             lines = textwrap.wrap(
-                str(arg), initial_indent=indent, subsequent_indent=indent,
-                break_long_words=break_long_words)
+                six.text_type(arg), initial_indent=indent,
+                subsequent_indent=indent, break_long_words=break_long_words)
             for line in lines:
                 stream.write(line + '\n')
         else:
-            stream.write(indent + str(arg) + '\n')
+            stream.write(indent + six.text_type(arg) + '\n')
 
 
 def verbose(message, *args, **kwargs):
@@ -186,7 +208,8 @@ def verbose(message, *args, **kwargs):
 
 
 def debug(message, *args, **kwargs):
-    if _debug:
+    level = kwargs.get('level', 1)
+    if is_debug(level):
         kwargs.setdefault('format', 'g')
         kwargs.setdefault('stream', sys.stderr)
         info(message, *args, **kwargs)
@@ -198,7 +221,7 @@ def error(message, *args, **kwargs):
 
     kwargs.setdefault('format', '*r')
     kwargs.setdefault('stream', sys.stderr)
-    info("Error: " + str(message), *args, **kwargs)
+    info("Error: " + six.text_type(message), *args, **kwargs)
 
 
 def warn(message, *args, **kwargs):
@@ -207,7 +230,7 @@ def warn(message, *args, **kwargs):
 
     kwargs.setdefault('format', '*Y')
     kwargs.setdefault('stream', sys.stderr)
-    info("Warning: " + str(message), *args, **kwargs)
+    info("Warning: " + six.text_type(message), *args, **kwargs)
 
 
 def die(message, *args, **kwargs):
@@ -231,7 +254,7 @@ def get_number(prompt, **kwargs):
     while number is None:
         msg(prompt, newline=False)
         ans = input()
-        if ans == str(abort):
+        if ans == six.text_type(abort):
             return None
 
         if ans:
@@ -297,7 +320,7 @@ def hline(label=None, **kwargs):
         cols -= 2
     cols = min(max_width, cols)
 
-    label = str(label)
+    label = six.text_type(label)
     prefix = char * 2 + " "
     suffix = " " + (cols - len(prefix) - clen(label)) * char
 

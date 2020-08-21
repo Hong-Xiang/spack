@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Lawrence Livermore National Security, LLC and other
+# Copyright 2013-2020 Lawrence Livermore National Security, LLC and other
 # Spack Project Developers. See the top-level COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
@@ -20,7 +20,7 @@ class Executable(object):
     """Class representing a program that can be run on the command line."""
 
     def __init__(self, name):
-        self.exe = shlex.split(name)
+        self.exe = shlex.split(str(name))
         self.default_env = {}
         self.returncode = None
 
@@ -209,7 +209,7 @@ class Executable(object):
                 istream.close()
 
     def __eq__(self, other):
-        return self.exe == other.exe
+        return hasattr(other, 'exe') and self.exe == other.exe
 
     def __neq__(self, other):
         return not (self == other)
@@ -222,6 +222,32 @@ class Executable(object):
 
     def __str__(self):
         return ' '.join(self.exe)
+
+
+def which_string(*args, **kwargs):
+    """Like ``which()``, but return a string instead of an ``Executable``."""
+    path = kwargs.get('path', os.environ.get('PATH', ''))
+    required = kwargs.get('required', False)
+
+    if isinstance(path, string_types):
+        path = path.split(os.pathsep)
+
+    for name in args:
+        if os.path.sep in name:
+            exe = os.path.abspath(name)
+            if os.path.isfile(exe) and os.access(exe, os.X_OK):
+                return exe
+        else:
+            for directory in path:
+                exe = os.path.join(directory, name)
+                if os.path.isfile(exe) and os.access(exe, os.X_OK):
+                    return exe
+
+    if required:
+        raise CommandNotFoundError(
+            "spack requires '%s'. Make sure it is in your path." % args[0])
+
+    return None
 
 
 def which(*args, **kwargs):
@@ -240,23 +266,13 @@ def which(*args, **kwargs):
     Returns:
         Executable: The first executable that is found in the path
     """
-    path = kwargs.get('path', os.environ.get('PATH', ''))
-    required = kwargs.get('required', False)
-
-    if isinstance(path, string_types):
-        path = path.split(os.pathsep)
-
-    for name in args:
-        for directory in path:
-            exe = os.path.join(directory, name)
-            if os.path.isfile(exe) and os.access(exe, os.X_OK):
-                return Executable(exe)
-
-    if required:
-        tty.die("spack requires '%s'. Make sure it is in your path." % args[0])
-
-    return None
+    exe = which_string(*args, **kwargs)
+    return Executable(exe) if exe else None
 
 
 class ProcessError(spack.error.SpackError):
     """ProcessErrors are raised when Executables exit with an error code."""
+
+
+class CommandNotFoundError(spack.error.SpackError):
+    """Raised when ``which()`` can't find a required executable."""

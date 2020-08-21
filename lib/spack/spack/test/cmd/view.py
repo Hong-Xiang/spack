@@ -1,4 +1,4 @@
-# Copyright 2013-2019 Lawrence Livermore National Security, LLC and other
+# Copyright 2013-2020 Lawrence Livermore National Security, LLC and other
 # Spack Project Developers. See the top-level COPYRIGHT file for details.
 #
 # SPDX-License-Identifier: (Apache-2.0 OR MIT)
@@ -24,7 +24,8 @@ def create_projection_file(tmpdir, projection):
     return projection_file
 
 
-@pytest.mark.parametrize('cmd', ['hardlink', 'symlink', 'hard', 'add'])
+@pytest.mark.parametrize('cmd', ['hardlink', 'symlink', 'hard', 'add',
+                                 'copy', 'relocate'])
 def test_view_link_type(
         tmpdir, mock_packages, mock_archive, mock_fetch, config,
         install_mockery, cmd):
@@ -33,10 +34,29 @@ def test_view_link_type(
     view(cmd, viewpath, 'libdwarf')
     package_prefix = os.path.join(viewpath, 'libdwarf')
     assert os.path.exists(package_prefix)
-    assert os.path.islink(package_prefix) == (not cmd.startswith('hard'))
+
+    # Check that we use symlinks for and only for the appropriate subcommands
+    is_link_cmd = cmd in ('symlink', 'add')
+    assert os.path.islink(package_prefix) == is_link_cmd
 
 
-@pytest.mark.parametrize('cmd', ['hardlink', 'symlink', 'hard', 'add'])
+@pytest.mark.parametrize('add_cmd', ['hardlink', 'symlink', 'hard', 'add',
+                                     'copy', 'relocate'])
+def test_view_link_type_remove(
+        tmpdir, mock_packages, mock_archive, mock_fetch, config,
+        install_mockery, add_cmd):
+    install('needs-relocation')
+    viewpath = str(tmpdir.mkdir('view_{0}'.format(add_cmd)))
+    view(add_cmd, viewpath, 'needs-relocation')
+    bindir = os.path.join(viewpath, 'bin')
+    assert os.path.exists(bindir)
+
+    view('remove', viewpath, 'needs-relocation')
+    assert not os.path.exists(bindir)
+
+
+@pytest.mark.parametrize('cmd', ['hardlink', 'symlink', 'hard', 'add',
+                                 'copy', 'relocate'])
 def test_view_projections(
         tmpdir, mock_packages, mock_archive, mock_fetch, config,
         install_mockery, cmd):
@@ -45,7 +65,7 @@ def test_view_projections(
     viewpath = str(tmpdir.mkdir('view_{0}'.format(cmd)))
     view_projection = {
         'projections': {
-            'all': '${PACKAGE}-${VERSION}'
+            'all': '{name}-{version}'
         }
     }
     projection_file = create_projection_file(tmpdir, view_projection)
@@ -54,7 +74,10 @@ def test_view_projections(
 
     package_prefix = os.path.join(viewpath, 'libdwarf-20130207/libdwarf')
     assert os.path.exists(package_prefix)
-    assert os.path.islink(package_prefix) == (not cmd.startswith('hard'))
+
+    # Check that we use symlinks for and only for the appropriate subcommands
+    is_symlink_cmd = cmd in ('symlink', 'add')
+    assert os.path.islink(package_prefix) == is_symlink_cmd
 
 
 def test_view_multiple_projections(
@@ -65,8 +88,8 @@ def test_view_multiple_projections(
 
     viewpath = str(tmpdir.mkdir('view'))
     view_projection = s_yaml.syaml_dict(
-        [('extendee', '${PACKAGE}-${COMPILERNAME}'),
-         ('all', '${PACKAGE}-${VERSION}')]
+        [('extendee', '{name}-{compiler.name}'),
+         ('all', '{name}-{version}')]
     )
 
     projection_file = create_projection_file(tmpdir, view_projection)
@@ -87,8 +110,8 @@ def test_view_multiple_projections_all_first(
 
     viewpath = str(tmpdir.mkdir('view'))
     view_projection = s_yaml.syaml_dict(
-        [('all', '${PACKAGE}-${VERSION}'),
-         ('extendee', '${PACKAGE}-${COMPILERNAME}')]
+        [('all', '{name}-{version}'),
+         ('extendee', '{name}-{compiler.name}')]
     )
 
     projection_file = create_projection_file(tmpdir, view_projection)
@@ -145,7 +168,7 @@ def test_view_extension_projection(
     install('extension2@1.0')
 
     viewpath = str(tmpdir.mkdir('view'))
-    view_projection = {'all': '${PACKAGE}-${VERSION}'}
+    view_projection = {'all': '{name}-{version}'}
     projection_file = create_projection_file(tmpdir, view_projection)
     view('symlink', viewpath, '--projection-file={0}'.format(projection_file),
          'extension1@1.0')
